@@ -78,7 +78,7 @@ testpaths = tests
 
 Run:
 ```bash
-python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
 ```
 Expected: installs complete without error.
 
@@ -931,7 +931,7 @@ answer. See `docs/specs/2026-06-28-finance-slack-rag-phase1-design.md`.
 ## Setup
 
 1. Create and fill `.env` from `.env.example`.
-2. `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+2. `uv venv && source .venv/bin/activate && uv pip install -r requirements.txt`
 3. Start Qdrant locally: `docker run -p 6333:6333 qdrant/qdrant`
 
 ## Slack app config
