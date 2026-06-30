@@ -1,0 +1,19 @@
+[project]
+name = "rag-chatbot"
+version = "0.1.0"
+description = "Slack RAG chatbot answering investment-strategy questions strictly from a vector knowledge base"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=2.44.0",
+    "python-dotenv>=1.2.2",
+    "qdrant-client>=1.18.0",
+    "slack-bolt>=1.28.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+    "jupyter>=1.1.1",
+    "pytest>=9.1.1",
+]
