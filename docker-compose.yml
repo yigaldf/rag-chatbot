@@ -1,0 +1,14 @@
+services:
+  bot:
+    build: .
+    image: ragchat-bot
+    env_file: .env
+    environment:
+      DATA_DIR: /app/data
+    volumes:
+      # Persist the Qdrant index + metrics across restarts (corpus is baked into the image).
+      - ragchat_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  ragchat_data:
