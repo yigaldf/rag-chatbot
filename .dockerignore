@@ -1,0 +1,13 @@
+# .dockerignore — keep the build context small and secrets out
+.git
+.venv
+data/qdrant
+data/metrics
+notebooks
+docs
+tests
+.claude
+.env
+__pycache__
+*.pyc
+.ipynb_checkpoints
