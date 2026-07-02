@@ -4,5 +4,6 @@ __pycache__/
 .ipynb_checkpoints/
 qdrant_storage/
 data/qdrant/
+data/metrics/
 .venv/
 .claude/settings.local.json
