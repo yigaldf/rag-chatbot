@@ -11,8 +11,8 @@ def _answer(text, sources, found):
 def test_strip_mention_removes_leading_bot_id():
     assert strip_mention("<@U123> what is EV/EBIT?", "U123") == "what is EV/EBIT?"
     assert strip_mention("<@U123>   spaced  ", "U123") == "spaced"
-    # mention in the middle is also removed
-    assert strip_mention("hey <@U123> hi", "U123") == "hey  hi".strip()
+    # mention in the middle is also removed; whitespace is collapsed
+    assert strip_mention("hey <@U123> hi", "U123") == "hey hi"
 
 
 def test_format_answer_found_includes_sources_and_metrics():
