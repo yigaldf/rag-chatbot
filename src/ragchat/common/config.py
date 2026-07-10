@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     router_model: str = "gpt-4o-mini"
     vector_size: int = 1536
 
+    # Vector store. Empty => embedded on-disk mode (single process).
+    qdrant_url: str = ""
+
     # Tunables
     top_k: int = 5
     score_threshold: float = 0.30

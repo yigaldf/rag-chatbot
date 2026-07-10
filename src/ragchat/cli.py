@@ -1,6 +1,7 @@
 import argparse
 
 from ragchat.answering.generator import answer
+from ragchat.common.clients import wait_for_qdrant
 from ragchat.ingestion.ingest import ingest
 from ragchat.metrics.registry import get_registry
 
@@ -37,6 +38,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     if args.cmd == "ingest":
+        wait_for_qdrant()
         print(ingest(force=args.force))
     elif args.cmd == "ask":
         r = answer(args.question)
