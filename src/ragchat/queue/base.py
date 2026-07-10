@@ -1,0 +1,9 @@
+from typing import Protocol
+
+from ragchat.queue.models import AskJob, ReceivedJob
+
+
+class JobQueue(Protocol):
+    def send(self, job: AskJob) -> None: ...
+    def receive(self, wait_seconds: int = 20) -> list[ReceivedJob]: ...
+    def delete(self, receipt: str) -> None: ...
