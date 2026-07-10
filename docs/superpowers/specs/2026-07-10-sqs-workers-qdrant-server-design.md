@@ -253,7 +253,7 @@ This is the change that actually unblocks multi-process: nothing but `ingest` an
 
 **Visibility timeout is queue-side configuration, not a client setting.** It is declared once in `elasticmq.conf` (`defaultVisibilityTimeout = 120 seconds`), or on the queue itself in real AWS. The client never sends it, so it is deliberately *not* a `Settings` field — a value in `Settings` that no code reads would be a lie.
 
-`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` come from the environment; ElasticMQ ignores their values but `boto3` requires them to be present.
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` must be **present** — `boto3` refuses to sign a request without credentials, even against ElasticMQ, which ignores their values. Requiring a developer to invent fake AWS credentials for a local queue is bad ergonomics, so `docker-compose.yml` defaults them (`${AWS_ACCESS_KEY_ID:-local}`); a real `.env` still wins when pointing at real SQS. Without this the workers crash-loop on `NoCredentialsError`.
 
 The worker fails fast at startup if `queue_url` is unset, mirroring the token check in `slack/app.py`.
 
