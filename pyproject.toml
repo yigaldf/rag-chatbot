@@ -16,6 +16,7 @@ dependencies = [
 [project.scripts]
 ragchat = "ragchat.cli:main"
 ragchat-bot = "ragchat.slack.bot:main"
+ragchat-worker = "ragchat.worker.main:main"
 
 [build-system]
 requires = ["hatchling"]
