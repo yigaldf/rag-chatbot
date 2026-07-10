@@ -7,3 +7,6 @@ data/qdrant/
 data/metrics/
 .venv/
 .claude/settings.local.json
+
+# brainstorming visual companion (session mockups)
+.superpowers/
