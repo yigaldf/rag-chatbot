@@ -1,14 +1,72 @@
+x-queue-env: &queue-env
+  QUEUE_URL: "http://queue:9324/000000000000/ragchat-jobs.fifo"
+  QUEUE_ENDPOINT_URL: "http://queue:9324"
+
 services:
+  qdrant:
+    image: qdrant/qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  queue:
+    image: softwaremill/elasticmq-native
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf:ro
+      - queue_data:/data
+    restart: unless-stopped
+
+  # One-shot: build/refresh the index, then exit 0. Its success IS the
+  # readiness signal that bot and worker gate on.
+  ingest:
+    build: .
+    image: ragchat-bot
+    command: ["ragchat", "ingest"]
+    env_file: .env
+    environment:
+      QDRANT_URL: "http://qdrant:6333"
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: "no"
+
+  # Producer. Deliberately has no QDRANT_URL: the bot must never open Qdrant.
   bot:
     build: .
     image: ragchat-bot
+    command: ["ragchat-bot"]
+    env_file: .env
+    environment: *queue-env
+    volumes:
+      - ragchat_data:/app/data
+    depends_on:
+      queue:
+        condition: service_started
+      ingest:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Consumer. Scale this, not the bot — the bot holds the single WebSocket.
+  worker:
+    build: .
+    image: ragchat-bot
+    command: ["ragchat-worker"]
     env_file: .env
     environment:
-      DATA_DIR: /app/data
+      <<: *queue-env
+      QDRANT_URL: "http://qdrant:6333"
     volumes:
-      # Persist the Qdrant index + metrics across restarts (corpus is baked into the image).
       - ragchat_data:/app/data
+    depends_on:
+      queue:
+        condition: service_started
+      ingest:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 3
     restart: unless-stopped
 
 volumes:
+  qdrant_data:
+  queue_data:
   ragchat_data:
