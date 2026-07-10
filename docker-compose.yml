@@ -25,6 +25,12 @@ services:
     env_file: .env
     environment:
       QDRANT_URL: "http://qdrant:6333"
+    volumes:
+      # manifest.json is the sha256 hash-skip ledger. Without a volume it dies
+      # with the container and every restart re-embeds the whole corpus at full
+      # OpenAI cost. Mounted narrowly: a volume over /app/data would shadow the
+      # corpus baked into the image, pinning it to a stale copy forever.
+      - ragchat_state:/app/data/qdrant
     depends_on:
       qdrant:
         condition: service_started
@@ -38,7 +44,7 @@ services:
     env_file: .env
     environment: *queue-env
     volumes:
-      - ragchat_data:/app/data
+      - ragchat_metrics:/app/data/metrics   # `stats` reads what the workers append
     depends_on:
       queue:
         condition: service_started
@@ -56,7 +62,7 @@ services:
       <<: *queue-env
       QDRANT_URL: "http://qdrant:6333"
     volumes:
-      - ragchat_data:/app/data
+      - ragchat_metrics:/app/data/metrics   # workers append; the bot reads
     depends_on:
       queue:
         condition: service_started
@@ -67,6 +73,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  qdrant_data:
-  queue_data:
-  ragchat_data:
+  qdrant_data:      # the Qdrant server's own storage
+  queue_data:       # ElasticMQ message persistence
+  ragchat_state:    # ingest's manifest.json (hash-skip ledger)
+  ragchat_metrics:  # metrics.jsonl, appended by workers, read by the bot

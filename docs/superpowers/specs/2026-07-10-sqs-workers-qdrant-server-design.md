@@ -275,7 +275,7 @@ Case 2 **cannot be eliminated** — it would require a distributed transaction s
 | Producer cannot enqueue | Post `_ERROR` in-thread; **no ack** |
 | `plan_queries` fails | Existing fallback to `[question]` — unchanged |
 | Worker raises | No delete → redeliver; on the final attempt post `_ERROR`, then let it fall into the DLQ |
-| Message exhausts `maxReceiveCount` | Lands in `ragchat-dlq.fifo` for inspection |
+| Message exhausts `maxReceiveCount` | Lands in `ragchat-dlq` for inspection |
 | `QUEUE_URL` / tokens missing | Fail fast at startup with a clear message |
 | Corrupt `metrics.jsonl` line | Skipped — unchanged |
 
@@ -285,7 +285,7 @@ Posting `_ERROR` on the last attempt matters: otherwise the user stares at `_thi
 
 `MetricsRegistry.__init__` loads `_items` from disk **once**, then serves `stats()` from that in-memory list. Once *workers* append and the *bot* answers `stats`, the bot's list is frozen at boot — `@bot stats` would report stale numbers forever, and no existing test would catch it.
 
-**Fix:** drop the in-memory cache. `stats()` re-reads the JSONL on every call. The file is small and `stats` is rare. `record()` keeps its `threading.Lock` for intra-process safety; short `O_APPEND` writes are atomic on POSIX, so N workers appending concurrently is safe. `bot` and `worker` share the `ragchat_data` volume.
+**Fix:** drop the in-memory cache. `stats()` re-reads the JSONL on every call. The file is small and `stats` is rare. `record()` keeps its `threading.Lock` for intra-process safety; short `O_APPEND` writes are atomic on POSIX, so N workers appending concurrently is safe. `bot` and `worker` share the `ragchat_metrics` volume.
 
 ## docker-compose (shape)
 
@@ -313,6 +313,7 @@ services:
     env_file: .env
     environment: {QDRANT_URL: "http://qdrant:6333"}
     depends_on: {qdrant: {condition: service_started}}
+    volumes: [ragchat_state:/app/data/qdrant]     # manifest.json
     restart: "no"
 
   bot:
@@ -323,7 +324,7 @@ services:
     depends_on:
       queue: {condition: service_started}
       ingest: {condition: service_completed_successfully}
-    volumes: [ragchat_data:/app/data]
+    volumes: [ragchat_metrics:/app/data/metrics]
 
   worker:
     build: .
@@ -336,10 +337,19 @@ services:
     depends_on:
       queue: {condition: service_started}
       ingest: {condition: service_completed_successfully}
-    volumes: [ragchat_data:/app/data]
+    volumes: [ragchat_metrics:/app/data/metrics]
 
-volumes: {qdrant_data: {}, queue_data: {}, ragchat_data: {}}
+volumes: {qdrant_data: {}, queue_data: {}, ragchat_state: {}, ragchat_metrics: {}}
 ```
+
+**Mount mutable state at narrow paths, never at `/app/data`.** The corpus is baked into the image at `/app/data/corpus`. A named volume mounted over `/app/data` is seeded from the image on first use and then *never updated* — so editing a corpus file and rebuilding would leave the bot serving the stale copy forever. Two narrow volumes avoid this:
+
+| Volume | Mount | Written by | Read by |
+|---|---|---|---|
+| `ragchat_state` | `/app/data/qdrant` | `ingest` (`manifest.json`) | `ingest` |
+| `ragchat_metrics` | `/app/data/metrics` | `worker` (append) | `bot` (`stats`) |
+
+`ingest` needs a volume at all only because `manifest.json` is the sha256 hash-skip ledger. Without it, every restart re-embeds the whole corpus at full OpenAI cost — the points are idempotent (`uuid5` ids), so this wastes money and time rather than corrupting the index.
 
 **Qdrant readiness is handled in code, not by a compose healthcheck.** A healthcheck would depend on `curl`/`wget` existing inside the `qdrant/qdrant` image, which is an assumption about someone else's image. Instead `ingest` retries its first Qdrant call with bounded backoff (~10 attempts, 1s apart) and exits non-zero if the server never comes up. `bot` and `worker` then gate on `service_completed_successfully`, so a successful `ingest` *is* the readiness signal.
 
@@ -359,13 +369,19 @@ queues {
     fifo = true
     contentBasedDeduplication = false
     defaultVisibilityTimeout = 120 seconds
-    deadLettersQueue { name = "ragchat-dlq.fifo", maxReceiveCount = 3 }
+    deadLettersQueue { name = "ragchat-dlq", maxReceiveCount = 3 }
   }
-  "ragchat-dlq.fifo" { }
+  "ragchat-dlq" { }
 }
 ```
 
-Note the required `.fifo` suffix on both queue names.
+**The DLQ name must NOT end in `.fifo` on ElasticMQ 1.7.1**, despite what ElasticMQ's own documentation shows. It validates `deadLettersQueue.name` against the *standard* queue-name rule and refuses to boot:
+
+```
+InvalidParameterValue(ragchat-dlq.fifo, Can only include alphanumeric characters, hyphens, or underscores.)
+```
+
+Real AWS SQS is the opposite: a FIFO queue's dead-letter queue must itself be FIFO and end in `.fifo`. So this file is **not** a template for AWS — moving to real SQS means provisioning `ragchat-dlq.fifo` there. Discovered by running the container, not by reading docs.
 
 ## Testing
 
