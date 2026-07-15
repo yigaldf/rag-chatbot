@@ -1,14 +1,85 @@
+x-queue-env: &queue-env
+  QUEUE_URL: "http://queue:9324/000000000000/ragchat-jobs.fifo"
+  QUEUE_ENDPOINT_URL: "http://queue:9324"
+  # boto3 refuses to sign a request without credentials, even against ElasticMQ,
+  # which ignores their values. Default them so a local queue needs no AWS account;
+  # a real .env still wins when pointing at real SQS.
+  AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-local}"
+  AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-local}"
+  AWS_REGION: "${AWS_REGION:-us-east-1}"
+
 services:
+  qdrant:
+    image: qdrant/qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  queue:
+    image: softwaremill/elasticmq-native
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf:ro
+      - queue_data:/data
+    restart: unless-stopped
+
+  # One-shot: build/refresh the index, then exit 0. Its success IS the
+  # readiness signal that bot and worker gate on.
+  ingest:
+    build: .
+    image: ragchat-bot
+    command: ["ragchat", "ingest"]
+    env_file: .env
+    environment:
+      QDRANT_URL: "http://qdrant:6333"
+    volumes:
+      # manifest.json is the sha256 hash-skip ledger. Without a volume it dies
+      # with the container and every restart re-embeds the whole corpus at full
+      # OpenAI cost. Mounted narrowly: a volume over /app/data would shadow the
+      # corpus baked into the image, pinning it to a stale copy forever.
+      - ragchat_state:/app/data/qdrant
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: "no"
+
+  # Producer. Deliberately has no QDRANT_URL: the bot must never open Qdrant.
   bot:
     build: .
     image: ragchat-bot
+    command: ["ragchat-bot"]
+    env_file: .env
+    environment: *queue-env
+    volumes:
+      - ragchat_metrics:/app/data/metrics   # `stats` reads what the workers append
+    depends_on:
+      queue:
+        condition: service_started
+      ingest:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Consumer. Scale this, not the bot — the bot holds the single WebSocket.
+  worker:
+    build: .
+    image: ragchat-bot
+    command: ["ragchat-worker"]
     env_file: .env
     environment:
-      DATA_DIR: /app/data
+      <<: *queue-env
+      QDRANT_URL: "http://qdrant:6333"
     volumes:
-      # Persist the Qdrant index + metrics across restarts (corpus is baked into the image).
-      - ragchat_data:/app/data
+      - ragchat_metrics:/app/data/metrics   # workers append; the bot reads
+    depends_on:
+      queue:
+        condition: service_started
+      ingest:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 3
     restart: unless-stopped
 
 volumes:
-  ragchat_data:
+  qdrant_data:      # the Qdrant server's own storage
+  queue_data:       # ElasticMQ message persistence
+  ragchat_state:    # ingest's manifest.json (hash-skip ledger)
+  ragchat_metrics:  # metrics.jsonl, appended by workers, read by the bot

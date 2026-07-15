@@ -1,4 +1,5 @@
 import atexit
+import time
 
 from openai import OpenAI
 from qdrant_client import QdrantClient
@@ -19,9 +20,33 @@ def get_openai() -> OpenAI:
 def get_qdrant() -> QdrantClient:
     global _qdrant
     if _qdrant is None:
-        settings.qdrant_dir.mkdir(parents=True, exist_ok=True)
-        _qdrant = QdrantClient(path=str(settings.qdrant_dir))
+        if settings.qdrant_url:
+            _qdrant = QdrantClient(url=settings.qdrant_url)
+        else:
+            settings.qdrant_dir.mkdir(parents=True, exist_ok=True)
+            _qdrant = QdrantClient(path=str(settings.qdrant_dir))
     return _qdrant
+
+
+def wait_for_qdrant(attempts: int = 10, delay: float = 1.0, sleep=time.sleep) -> None:
+    """Block until the Qdrant server answers. No-op in embedded mode.
+
+    Compose starts `qdrant` and `ingest` together, so the first connection may
+    land before the server is listening. Retrying here keeps the readiness
+    check in our code instead of betting on `curl` existing in someone else's image.
+    """
+    if not settings.qdrant_url:
+        return
+    last: Exception | None = None
+    for _ in range(attempts):
+        try:
+            get_qdrant().get_collections()
+            return
+        except Exception as e:  # noqa: BLE001 - any transport error means "not up yet"
+            last = e
+            _close_qdrant()  # drop the half-open client before retrying
+            sleep(delay)
+    raise RuntimeError(f"Qdrant not reachable at {settings.qdrant_url} after {attempts} attempts: {last}")
 
 
 def _close_qdrant() -> None:

@@ -13,6 +13,16 @@ class Settings(BaseSettings):
     router_model: str = "gpt-4o-mini"
     vector_size: int = 1536
 
+    # Vector store. Empty => embedded on-disk mode (single process).
+    qdrant_url: str = ""
+
+    # Queue. Empty queue_url => in-memory queue (no Docker, tests).
+    queue_url: str = ""
+    queue_endpoint_url: str = ""   # set => ElasticMQ; empty => real AWS SQS
+    aws_region: str = "us-east-1"
+    worker_wait_seconds: int = 20
+    max_receive_count: int = 3     # must match the queue's DLQ redrive policy
+
     # Tunables
     top_k: int = 5
     score_threshold: float = 0.30

@@ -10,9 +10,9 @@ def build_app() -> App:
     app = App(token=settings.slack_bot_token)
 
     @app.event("app_mention")
-    def _on_mention(event, say, context):
-        # context["bot_user_id"] is provided by Bolt; `say` posts to the event's channel.
-        handle_mention(event, say, context["bot_user_id"])
+    def _on_mention(event, body, say, context):
+        # `body["event_id"]` is the dedup key; `say` posts to the event's channel.
+        handle_mention(event, body, say, context["bot_user_id"])
 
     return app
 

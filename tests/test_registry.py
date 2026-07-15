@@ -20,6 +20,25 @@ def test_record_persists_and_aggregates(tmp_path):
     assert reg2.stats().num_questions == 2
 
 
+def test_stats_reflects_writes_from_another_process(tmp_path):
+    """A worker process appends; the bot process must see it.
+
+    The bot holds a long-lived MetricsRegistry and answers `stats` from it.
+    Simulate an external append and assert stats() re-reads the file.
+    """
+    path = tmp_path / "metrics.jsonl"
+    reg = MetricsRegistry(path)
+    reg.record(_m(1, 1, 10, 90))
+    assert reg.stats().num_questions == 1
+
+    # another process appends, bypassing this registry entirely
+    with path.open("a", encoding="utf-8") as f:
+        f.write(_m(2, 4, 20, 180).model_dump_json() + "\n")
+
+    assert reg.stats().num_questions == 2
+    assert reg.stats().total_tokens == 300
+
+
 def test_corrupt_line_is_skipped(tmp_path):
     path = tmp_path / "metrics.jsonl"
     path.write_text('{"bad json\n' + _m(1, 1, 1, 1).model_dump_json() + "\n")
